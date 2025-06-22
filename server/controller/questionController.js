@@ -189,7 +189,9 @@ async function deleteQuestion(req, res) {
     await dbConnection.query('DELETE FROM questions WHERE id = ?', [
       questionId,
     ]);
-
+    await dbConnection.query("DELETE FROM questions WHERE id = ?", [
+      questionId,
+    ]);
     res.status(StatusCodes.OK).json({ msg: 'Question deleted successfully' });
   } catch (error) {
     console.error(error.message);

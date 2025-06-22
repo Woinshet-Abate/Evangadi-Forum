@@ -109,76 +109,75 @@ async function deleteAnswer(req, res) {
 async function voteAnswer(req, res) {
   const userId = req.user.userid;
   const answerId = req.params.id;
-  const { voteType } = req.body; // `voteType` can be 'like' or 'dislike'
+  const { voteType } = req.body; // "upvote" or "downvote"
+
+  if (!["upvote", "downvote"].includes(voteType)) {
+    return res.status(400).json({ msg: "Invalid vote type" });
+  }
 
   try {
-    // Check if the user has already voted for this answer
     const [existingVote] = await dbConnection.query(
-      'SELECT * FROM answer_votes WHERE userid = ? AND answerid = ?',
+      "SELECT vote_type FROM answer_votes WHERE userid = ? AND answerid = ?",
       [userId, answerId]
     );
 
     if (existingVote.length > 0) {
-      // If the user has already voted, check if the vote type matches
-      if (existingVote[0].vote_type === voteType) {
-        // Remove the vote from the answer_votes table
+      const currentVote = existingVote[0].vote_type;
+
+      if (currentVote === voteType) {
+        // User clicked the same vote again → remove it
         await dbConnection.query(
-          'DELETE FROM answer_votes WHERE userid = ? AND answerid = ?',
+          "DELETE FROM answer_votes WHERE userid = ? AND answerid = ?",
           [userId, answerId]
         );
 
-        // Decrease the likes or dislikes count in the answers table
-        if (voteType === 'like') {
-          await dbConnection.query(
-            'UPDATE answers SET likes = likes - 1 WHERE answerid = ?',
-            [answerId]
-          );
-        } else if (voteType === 'dislike') {
-          await dbConnection.query(
-            'UPDATE answers SET dislikes = dislikes - 1 WHERE answerid = ?',
-            [answerId]
-          );
-        }
+        const column = voteType === "upvote" ? "likes" : "dislikes";
+        await dbConnection.query(
+          `UPDATE answers SET ${column} = ${column} - 1 WHERE answerid = ?`,
+          [answerId]
+        );
 
-        return res
-          .status(StatusCodes.OK)
-          .json({ msg: 'Vote removed successfully' });
+        return res.status(200).json({ msg: `${voteType} removed` });
+      } else {
+        // User switched vote (upvote ⇄ downvote)
+        await dbConnection.query(
+          "UPDATE answer_votes SET vote_type = ? WHERE userid = ? AND answerid = ?",
+          [voteType, userId, answerId]
+        );
+
+        const addColumn = voteType === "upvote" ? "likes" : "dislikes";
+        const removeColumn = voteType === "upvote" ? "dislikes" : "likes";
+
+        await dbConnection.query(
+          `UPDATE answers SET ${addColumn} = ${addColumn} + 1, ${removeColumn} = ${removeColumn} - 1 WHERE answerid = ?`,
+          [answerId]
+        );
+
+        return res.status(200).json({ msg: `Vote changed to ${voteType}` });
       }
-    }
-
-    // Record the vote in the answer_votes table
-    await dbConnection.query(
-      'INSERT INTO answer_votes (userid, answerid, vote_type) VALUES (?, ?, ?)',
-      [userId, answerId, voteType]
-    );
-
-    // Update the likes or dislikes count in the answers table
-    if (voteType === 'like') {
-      await dbConnection.query(
-        'UPDATE answers SET likes = likes + 1 WHERE answerid = ?',
-        [answerId]
-      );
-    } else if (voteType === 'dislike') {
-      await dbConnection.query(
-        'UPDATE answers SET dislikes = dislikes + 1 WHERE answerid = ?',
-        [answerId]
-      );
     } else {
-      return res.status(StatusCodes.BAD_REQUEST).json({
-        error: 'Bad Request',
-        msg: 'Invalid vote type',
-      });
-    }
+      // First time voting
+      await dbConnection.query(
+        "INSERT INTO answer_votes (userid, answerid, vote_type) VALUES (?, ?, ?)",
+        [userId, answerId, voteType]
+      );
 
-    res.status(StatusCodes.OK).json({ msg: 'Vote recorded successfully' });
+      const column = voteType === "upvote" ? "likes" : "dislikes";
+      await dbConnection.query(
+        `UPDATE answers SET ${column} = ${column} + 1 WHERE answerid = ?`,
+        [answerId]
+      );
+
+      return res.status(200).json({ msg: `${voteType} added` });
+    }
   } catch (error) {
-    console.error(error.message);
-    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
-      error: 'Internal Server Error',
-      msg: 'An unexpected error occurred',
-    });
+    console.error("Vote error:", error.message);
+    return res.status(500).json({ msg: "Server error while voting" });
   }
 }
+
+
+
 
 async function editAnswer(req, res) {
   const userId = req.user.userid; // Get the logged-in user's ID

@@ -168,42 +168,58 @@ const AnswerPage = () => {
     try {
       const res = await axiosBase.post(
         `/answers/vote/${answerId}`,
-        { voteType },
+        { voteType }, // must be "upvote" or "downvote"
         {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
 
-      if (res.data.msg === 'Vote removed successfully') {
-        // If the vote was removed, decrease the count
-        setAnswers((prev) =>
-          prev.map((answer) =>
-            answer.answerid === answerId
-              ? voteType === 'like'
-                ? { ...answer, likes: answer.likes - 1 }
-                : { ...answer, dislikes: answer.dislikes - 1 }
-              : answer
-          )
-        );
-      } else {
-        // If the vote was added, increase the count
-        setAnswers((prev) =>
-          prev.map((answer) =>
-            answer.answerid === answerId
-              ? voteType === 'like'
-                ? { ...answer, likes: answer.likes + 1 }
-                : { ...answer, dislikes: answer.dislikes + 1 }
-              : answer
-          )
-        );
-      }
+      const message = res.data.msg;
+
+      setAnswers((prev) =>
+        prev.map((answer) => {
+          if (answer.answerid !== answerId) return answer;
+
+          // Adjust vote counts based on backend message
+          if (message.includes("removed")) {
+            if (voteType === "upvote") {
+              return { ...answer, likes: answer.likes - 1 };
+            } else {
+              return { ...answer, dislikes: answer.dislikes - 1 };
+            }
+          } else if (message.includes("changed")) {
+            if (voteType === "upvote") {
+              return {
+                ...answer,
+                likes: answer.likes + 1,
+                dislikes: answer.dislikes - 1,
+              };
+            } else {
+              return {
+                ...answer,
+                likes: answer.likes - 1,
+                dislikes: answer.dislikes + 1,
+              };
+            }
+          } else if (message.includes("added")) {
+            if (voteType === "upvote") {
+              return { ...answer, likes: answer.likes + 1 };
+            } else {
+              return { ...answer, dislikes: answer.dislikes + 1 };
+            }
+          }
+
+          return answer;
+        })
+      );
     } catch (error) {
       console.error(
-        'Error voting on answer:',
+        "Error voting on answer:",
         error.response?.data?.msg || error.message
       );
     }
   }
+  
 
   async function handleEditAnswer(answerId) {
     try {
@@ -449,7 +465,7 @@ const AnswerPage = () => {
                         <div className={styles.answerActions}>
                           <button
                             onClick={() =>
-                              handleVoteAnswer(answer.answerid, 'like')
+                              handleVoteAnswer(answer.answerid, 'upvote')
                             }
                             className={`${styles.likeButton} ${
                               answer.likes === 1 ? styles.active : ''
@@ -459,7 +475,7 @@ const AnswerPage = () => {
                           </button>
                           <button
                             onClick={() =>
-                              handleVoteAnswer(answer.answerid, 'dislike')
+                              handleVoteAnswer(answer.answerid, 'downvote')
                             }
                             className={`${styles.dislikeButton} ${
                               answer.dislikes === 1 ? styles.active : ''
